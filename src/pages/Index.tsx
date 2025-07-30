@@ -208,7 +208,7 @@ const Index = () => {
 
   const handleOptionalGenerate = async (selectedOptions: string[]) => {
     setIsGenerating(true);
-    setActiveStep('content');
+    // Keep showing content grid, don't switch to 'content' step
 
     try {
       for (const optionType of selectedOptions) {
@@ -345,18 +345,21 @@ const Index = () => {
               onGenerate={handleGenerate}
               isGenerating={isGenerating}
             />
-          ) : activeStep === 'optional' ? (
-            <OptionalContentSelector
-              onGenerate={handleOptionalGenerate}
-              isGenerating={isGenerating}
-              generationStatus={generationStatus}
-            />
           ) : (
-            <ContentGrid 
-              contents={contents}
-              onRegenerate={handleRegenerate}
-              onEdit={handleEdit}
-            />
+            <>
+              {activeStep === 'optional' && (
+                <OptionalContentSelector
+                  onGenerate={handleOptionalGenerate}
+                  isGenerating={isGenerating}
+                  generationStatus={generationStatus}
+                />
+              )}
+              <ContentGrid 
+                contents={contents}
+                onRegenerate={handleRegenerate}
+                onEdit={handleEdit}
+              />
+            </>
           )}
         </main>
       </div>
