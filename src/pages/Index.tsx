@@ -211,9 +211,10 @@ const Index = () => {
     // Keep showing content grid, don't switch to 'content' step
 
     try {
-      for (const optionType of selectedOptions) {
-        setGenerationStatus(`${getTypeDisplayName(optionType)}を生成しています...`);
-        
+      setGenerationStatus('オプションコンテンツを並列生成しています...');
+
+      // Add pending items for all selected options
+      const optionalPendingIds = selectedOptions.map(optionType => {
         const pendingId = `${optionType}_${Date.now()}`;
         setContents(prev => [...prev, {
           id: pendingId,
@@ -222,12 +223,15 @@ const Index = () => {
           status: 'pending',
           category: 'optional'
         }]);
+        return { optionType, pendingId };
+      });
 
-        // Determine base content type
+      // Generate all optional content in parallel
+      const optionalPromises = selectedOptions.map(optionType => {
         const baseContentType = optionType === 'vsl_script' ? 'sales_letter' : 'free_content';
         const baseContent = generatedCoreContent[baseContentType];
 
-        const { data, error } = await supabase.functions.invoke('generate-content', {
+        return supabase.functions.invoke('generate-content', {
           body: { 
             projectId: 'temp-project', 
             contentType: optionType, 
@@ -235,28 +239,36 @@ const Index = () => {
             inputType: 'content_text'
           }
         });
+      });
 
-        if (error) {
-          console.error('Generation error:', error);
+      const optionalResults = await Promise.allSettled(optionalPromises);
+
+      // Process optional results
+      optionalResults.forEach((result, index) => {
+        const { optionType, pendingId } = optionalPendingIds[index];
+        
+        if (result.status === 'fulfilled' && !result.value.error) {
+          const generatedContent = result.value.data.content || result.value.data.generatedText;
+          
+          setContents(prev => prev.map(item => 
+            item.id === pendingId 
+              ? { ...item, content: generatedContent, status: 'completed' }
+              : item
+          ));
+
+          toast({
+            title: "生成完了",
+            description: `${getTypeDisplayName(optionType)}が生成されました`,
+          });
+        } else {
+          console.error('Optional generation error:', result);
           setContents(prev => prev.map(item => 
             item.id === pendingId 
               ? { ...item, status: 'error' }
               : item
           ));
-          continue;
         }
-
-        setContents(prev => prev.map(item => 
-          item.id === pendingId 
-            ? { ...item, content: data.content || data.generatedText, status: 'completed' }
-            : item
-        ));
-
-        toast({
-          title: "生成完了",
-          description: `${getTypeDisplayName(optionType)}が生成されました`,
-        });
-      }
+      });
 
       toast({
         title: "オプション生成完了！",
