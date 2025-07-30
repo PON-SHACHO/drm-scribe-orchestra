@@ -47,7 +47,8 @@ serve(async (req) => {
           { role: 'system', content: getSystemPrompt(contentType) },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 4000,
+        max_tokens: 8000, // 長い出力に対応するため増加
+        temperature: 0.7, // 少し創造性を持たせる
       }),
     });
 
@@ -73,23 +74,17 @@ serve(async (req) => {
 
     const generatedContent = data.choices[0].message.content;
 
-    // Save to database (temporarily disabled until tables are created)
-    // const { data: contentItem, error } = await supabase
-    //   .from('content_items')
-    //   .insert({
-    //     project_id: projectId,
-    //     type: contentType,
-    //     title: getTitleForContentType(contentType),
-    //     content: generatedContent,
-    //     status: 'completed',
-    //     user_id: userId
-    //   })
-    //   .select()
-    //   .single();
+    // レスポンスの完全性をチェック
+    if (data.choices[0].finish_reason === 'length') {
+      console.warn(`Content generation was truncated due to length limit for ${contentType}`);
+    }
 
-    // if (error) throw error;
+    console.log(`Generated ${contentType} for project ${projectId} - Length: ${generatedContent?.length || 0} characters, Finish reason: ${data.choices[0].finish_reason}`);
 
-    console.log(`Generated ${contentType} for project ${projectId}`);
+    // 生成されたコンテンツが空でないことを確認
+    if (!generatedContent || generatedContent.trim().length === 0) {
+      throw new Error('Generated content is empty');
+    }
 
     return new Response(JSON.stringify({ 
       success: true, 
