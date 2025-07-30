@@ -15,10 +15,19 @@ import {
   Settings
 } from "lucide-react";
 
+interface ContentItem {
+  id: string;
+  title: string;
+  content: string;
+  status: 'pending' | 'completed' | 'error';
+  category: 'free' | 'sales' | 'optional';
+}
+
 interface SidebarProps {
-  onStepClick: (step: string) => void;
   activeStep: string;
-  generationStatus: Record<string, 'pending' | 'completed' | 'error' | 'not-started'>;
+  contents: ContentItem[];
+  isGenerating: boolean;
+  generationStatus: string;
 }
 
 const generationSteps = [
@@ -137,8 +146,14 @@ const getCategoryBadgeVariant = (category: string) => {
   }
 };
 
-export function Sidebar({ onStepClick, activeStep, generationStatus }: SidebarProps) {
+export function Sidebar({ activeStep, contents, isGenerating, generationStatus }: SidebarProps) {
   const [expandedCategory, setExpandedCategory] = useState<string | null>('core');
+
+  // Create status mapping from contents
+  const statusMap = contents.reduce((acc, item) => {
+    acc[item.id.split('_')[0]] = item.status;
+    return acc;
+  }, {} as Record<string, 'pending' | 'completed' | 'error' | 'not-started'>);
 
   const categorizedSteps = generationSteps.reduce((acc, step) => {
     if (!acc[step.category]) {
@@ -165,6 +180,11 @@ export function Sidebar({ onStepClick, activeStep, generationStatus }: SidebarPr
 
       {/* 生成フロー */}
       <div className="flex-1 p-4 overflow-y-auto">
+        {isGenerating && generationStatus && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="text-sm text-blue-800">{generationStatus}</p>
+          </div>
+        )}
         <div className="space-y-4">
           {Object.entries(categorizedSteps).map(([category, steps]) => (
             <Card key={category} className="bg-sidebar-accent/50 border-sidebar-border">
@@ -193,26 +213,22 @@ export function Sidebar({ onStepClick, activeStep, generationStatus }: SidebarPr
                 <div className="px-3 pb-3 space-y-2">
                   {steps.map((step) => {
                     const Icon = step.icon;
-                    const status = generationStatus[step.id] || 'not-started';
-                    const isActive = activeStep === step.id;
+                    const status = statusMap[step.id] || 'not-started';
+                    const isActive = false; // For now, no active step highlighting
 
                     return (
-                      <Button
+                      <div
                         key={step.id}
-                        variant={isActive ? "default" : "ghost"}
-                        className={`w-full justify-start text-left h-auto p-3 ${
+                        className={`w-full flex items-center gap-3 p-3 rounded-md ${
                           isActive 
                             ? "bg-sidebar-primary text-sidebar-primary-foreground" 
-                            : "text-sidebar-foreground hover:bg-sidebar-accent"
+                            : "text-sidebar-foreground"
                         }`}
-                        onClick={() => onStepClick(step.id)}
                       >
-                        <div className="flex items-center gap-3 w-full">
-                          <Icon className="w-4 h-4 shrink-0" />
-                          <span className="flex-1 font-medium">{step.title}</span>
-                          {getStatusIcon(status)}
-                        </div>
-                      </Button>
+                        <Icon className="w-4 h-4 shrink-0" />
+                        <span className="flex-1 font-medium">{step.title}</span>
+                        {getStatusIcon(status)}
+                      </div>
                     );
                   })}
                 </div>
