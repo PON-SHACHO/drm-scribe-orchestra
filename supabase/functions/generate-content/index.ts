@@ -51,7 +51,26 @@ serve(async (req) => {
       }),
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    }
+
+    const contentType_response = response.headers.get('content-type');
+    if (!contentType_response || !contentType_response.includes('application/json')) {
+      const errorText = await response.text();
+      console.error('OpenAI API returned non-JSON response:', errorText);
+      throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
+    }
+
     const data = await response.json();
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('Unexpected OpenAI API response structure:', data);
+      throw new Error('Unexpected response structure from OpenAI API');
+    }
+
     const generatedContent = data.choices[0].message.content;
 
     // Save to database (temporarily disabled until tables are created)
