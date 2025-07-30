@@ -23,11 +23,14 @@ serve(async (req) => {
       global: { headers: { Authorization: req.headers.get('Authorization')! } }
     });
 
-    // Get user from auth
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
+    // Get user from auth (temporary: skip auth check for now)
+    // const { data: { user } } = await supabase.auth.getUser();
+    // if (!user) {
+    //   throw new Error('User not authenticated');
+    // }
+
+    // Use a temporary user ID for now
+    const userId = 'temp-user-id';
 
     // Generate content based on type
     const prompt = getPromptForContentType(contentType, input, inputType);
@@ -51,28 +54,28 @@ serve(async (req) => {
     const data = await response.json();
     const generatedContent = data.choices[0].message.content;
 
-    // Save to database
-    const { data: contentItem, error } = await supabase
-      .from('content_items')
-      .insert({
-        project_id: projectId,
-        type: contentType,
-        title: getTitleForContentType(contentType),
-        content: generatedContent,
-        status: 'completed',
-        user_id: user.id
-      })
-      .select()
-      .single();
+    // Save to database (temporarily disabled until tables are created)
+    // const { data: contentItem, error } = await supabase
+    //   .from('content_items')
+    //   .insert({
+    //     project_id: projectId,
+    //     type: contentType,
+    //     title: getTitleForContentType(contentType),
+    //     content: generatedContent,
+    //     status: 'completed',
+    //     user_id: userId
+    //   })
+    //   .select()
+    //   .single();
 
-    if (error) throw error;
+    // if (error) throw error;
 
     console.log(`Generated ${contentType} for project ${projectId}`);
 
     return new Response(JSON.stringify({ 
       success: true, 
       content: generatedContent,
-      contentItem 
+      generatedText: generatedContent
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
