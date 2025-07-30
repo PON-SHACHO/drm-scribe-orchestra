@@ -51,9 +51,9 @@ const Index = () => {
     setContents([]);
 
     try {
-      // Generate core content types in sequence
+      // Step 1: Generate core content types first
       const coreTypes = ['free_content', 'sales_letter'];
-      const derivativeTypes = ['short_lp', 'education_posts', 'campaign_post', 'long_lp', 'step_mails'];
+      const generatedCoreContent: { [key: string]: string } = {};
 
       // Generate core content first
       for (const contentType of coreTypes) {
@@ -90,10 +90,13 @@ const Index = () => {
           continue;
         }
 
-        // Update with completed content
+        // Update with completed content and store for derivative generation
+        const generatedContent = data.content || data.generatedText;
+        generatedCoreContent[contentType] = generatedContent;
+        
         setContents(prev => prev.map(item => 
           item.id === pendingId 
-            ? { ...item, content: data.content || data.generatedText, status: 'completed' }
+            ? { ...item, content: generatedContent, status: 'completed' }
             : item
         ));
 
@@ -103,7 +106,9 @@ const Index = () => {
         });
       }
 
-      // Generate derivative content
+      // Step 2: Generate derivative content based on core content
+      const derivativeTypes = ['short_lp', 'education_posts', 'campaign_post', 'long_lp', 'step_mails'];
+      
       for (const contentType of derivativeTypes) {
         setGenerationStatus(`${getTypeDisplayName(contentType)}を生成しています...`);
         
@@ -116,12 +121,16 @@ const Index = () => {
           category: getCategoryFromType(contentType)
         }]);
 
+        // Determine which core content to use as base
+        const baseContentType = getCategoryFromType(contentType) === 'free' ? 'free_content' : 'sales_letter';
+        const baseContent = generatedCoreContent[baseContentType];
+
         const { data, error } = await supabase.functions.invoke('generate-content', {
           body: { 
             projectId: 'temp-project', 
             contentType, 
-            input, 
-            inputType 
+            input: baseContent,
+            inputType: 'content_text'
           }
         });
 

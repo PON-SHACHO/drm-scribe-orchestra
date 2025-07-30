@@ -126,9 +126,15 @@ function getPromptForContentType(contentType: string, input: string, inputType: 
     case 'sales_letter':
       return `${inputContext}\n\n上記の商品情報から、1対1で説得するような超長文セールスレターを作成してください。感情→共感→変化→教育→商品導入→価格→限定性→クロージングという流れを明確に構成してください。`;
     case 'short_lp':
-      return `${inputContext}\n\n上記のコンテンツから、メール登録を促す短尺LPを作成してください。構成：1.キャッチコピー 2.サブキャッチ 3.ベネフィット 4.プレゼント紹介 5.登録導線`;
+      return `${inputContext}\n\n上記の無料プレゼント内容から、メール登録を促す短尺LPを作成してください。構成：1.キャッチコピー 2.サブキャッチ 3.ベネフィット 4.プレゼント紹介 5.登録導線`;
     case 'education_posts':
-      return `${inputContext}\n\n上記のコンテンツから、SNS向け教育ポストを9本作成してください。それぞれ独立したテーマで、本編を読みたくなる余白を残してください。`;
+      return `${inputContext}\n\n上記の無料プレゼント内容から、SNS向け教育ポストを9本作成してください。それぞれ独立したテーマで、本編を読みたくなる余白を残してください。`;
+    case 'campaign_post':
+      return `${inputContext}\n\n上記の無料プレゼント内容から、SNSでの企画ポスト（告知）を作成してください。無料プレゼントの魅力を伝える内容にしてください。`;
+    case 'long_lp':
+      return `${inputContext}\n\n上記のセールスレター内容から、スキャン読みしやすい商品販売LPを作成してください。セールスレターの構成を活かしつつ、LP形式に最適化してください。`;
+    case 'step_mails':
+      return `${inputContext}\n\n上記のセールスレター内容から、心理的ステップに基づいたステップメール（7通セット）を作成してください。セールスレターの内容を段階的に配信する形で構成してください。`;
     default:
       return `${inputContext}\n\n上記の情報から、${contentType}を作成してください。`;
   }
