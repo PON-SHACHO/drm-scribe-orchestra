@@ -2,57 +2,83 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* マーケティングコンテンツ生成アプリ デザインシステム */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* ベース色調 - プロフェッショナルなマーケティングツール */
+    --background: 248 252 255; /* 極薄いブルー背景 */
+    --foreground: 215 25% 27%; /* ダークネイビー文字 */
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%; /* 純白カード */
+    --card-foreground: 215 25% 27%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 215 25% 27%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* プライマリ - 信頼感のあるブルー */
+    --primary: 213 94% 68%; /* モダンブルー */
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 213 94% 58%;
+    --primary-glow: 213 94% 78%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* セカンダリ - アクセント用 */
+    --secondary: 45 100% 60%; /* ゴールドアクセント */
+    --secondary-foreground: 215 25% 27%;
+    --secondary-hover: 45 100% 50%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* ミュート - 控えめな表示 */
+    --muted: 220 13% 96%;
+    --muted-foreground: 215 16% 47%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* アクセント - 強調用 */
+    --accent: 142 71% 45%; /* 成功グリーン */
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* 状態色 */
+    --warning: 38 100% 50%; /* 警告オレンジ */
+    --warning-foreground: 0 0% 100%;
+    
+    --success: 142 71% 45%; /* 成功グリーン */
+    --success-foreground: 0 0% 100%;
+    
+    --pending: 213 27% 84%; /* 処理中グレー */
+    --pending-foreground: 215 25% 27%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --radius: 0.5rem;
+    /* 境界線とインプット */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 213 94% 68%;
 
-    --sidebar-background: 0 0% 98%;
+    --radius: 0.75rem; /* 少し丸みを増加 */
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    /* サイドバー専用色 */
+    --sidebar-background: 215 27% 32%; /* ダークネイビー */
+    --sidebar-foreground: 213 31% 91%;
+    --sidebar-primary: 213 94% 68%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 25% 40%;
+    --sidebar-accent-foreground: 213 31% 91%;
+    --sidebar-border: 215 25% 45%;
+    --sidebar-ring: 213 94% 68%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    /* カスタムグラデーション */
+    --gradient-primary: linear-gradient(135deg, hsl(213 94% 68%), hsl(213 94% 78%));
+    --gradient-hero: linear-gradient(135deg, hsl(215 27% 32%), hsl(213 94% 68%));
+    --gradient-card: linear-gradient(145deg, hsl(0 0% 100%), hsl(220 13% 98%));
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    /* シャドウ */
+    --shadow-sm: 0 1px 2px hsl(213 27% 84% / 0.1);
+    --shadow-md: 0 4px 6px hsl(213 27% 84% / 0.15);
+    --shadow-lg: 0 10px 15px hsl(213 27% 84% / 0.2);
+    --shadow-glow: 0 0 20px hsl(213 94% 68% / 0.3);
 
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* アニメーション */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
   }
 
   .dark {
