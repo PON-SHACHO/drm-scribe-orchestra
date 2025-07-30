@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Sidebar } from "@/components/Sidebar";
 import { InputSection } from "@/components/InputSection";
 import { ContentGrid } from "@/components/ContentGrid";
+import { OptionalContentSelector } from "@/components/OptionalContentSelector";
 
 interface ContentItem {
   id: string;
@@ -14,10 +15,12 @@ interface ContentItem {
 }
 
 const Index = () => {
-  const [activeStep, setActiveStep] = useState<'input' | 'content'>('input');
+  const [activeStep, setActiveStep] = useState<'input' | 'content' | 'optional'>('input');
   const [contents, setContents] = useState<ContentItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>('');
+  const [coreContentGenerated, setCoreContentGenerated] = useState(false);
+  const [generatedCoreContent, setGeneratedCoreContent] = useState<{ [key: string]: string }>({});
 
   const getTypeDisplayName = (type: string): string => {
     const names = {
@@ -27,7 +30,10 @@ const Index = () => {
       'education_posts': '教育ポスト（9本セット）',
       'campaign_post': '企画ポスト',
       'long_lp': '商品販売用LP',
-      'step_mails': 'ステップメール（7通セット）'
+      'step_mails': 'ステップメール（7通セット）',
+      'repost_bonus': 'リポスト特典',
+      'webinar_script': 'ウェビナー台本とスライド',
+      'vsl_script': 'VSL台本とスライド'
     };
     return names[type] || type;
   };
@@ -40,7 +46,10 @@ const Index = () => {
       'education_posts': 'free' as const,
       'campaign_post': 'free' as const,
       'long_lp': 'sales' as const,
-      'step_mails': 'sales' as const
+      'step_mails': 'sales' as const,
+      'repost_bonus': 'optional' as const,
+      'webinar_script': 'optional' as const,
+      'vsl_script': 'optional' as const
     };
     return categories[type] || 'optional';
   };
@@ -156,9 +165,14 @@ const Index = () => {
         });
       }
 
+      // Store core content for optional generation
+      setGeneratedCoreContent(generatedCoreContent);
+      setCoreContentGenerated(true);
+      setActiveStep('optional');
+
       toast({
-        title: "全ての生成が完了しました！",
-        description: "マーケティングコンテンツ一式の生成が完了しました",
+        title: "基本コンテンツ生成完了！",
+        description: "オプションコンテンツを選択して追加生成できます",
       });
 
     } catch (error) {
@@ -166,6 +180,76 @@ const Index = () => {
       toast({
         title: "エラー",
         description: `コンテンツ生成中にエラーが発生しました: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+      setGenerationStatus('');
+    }
+  };
+
+  const handleOptionalGenerate = async (selectedOptions: string[]) => {
+    setIsGenerating(true);
+    setActiveStep('content');
+
+    try {
+      for (const optionType of selectedOptions) {
+        setGenerationStatus(`${getTypeDisplayName(optionType)}を生成しています...`);
+        
+        const pendingId = `${optionType}_${Date.now()}`;
+        setContents(prev => [...prev, {
+          id: pendingId,
+          title: getTypeDisplayName(optionType),
+          content: '',
+          status: 'pending',
+          category: 'optional'
+        }]);
+
+        // Determine base content type
+        const baseContentType = optionType === 'vsl_script' ? 'sales_letter' : 'free_content';
+        const baseContent = generatedCoreContent[baseContentType];
+
+        const { data, error } = await supabase.functions.invoke('generate-content', {
+          body: { 
+            projectId: 'temp-project', 
+            contentType: optionType, 
+            input: baseContent,
+            inputType: 'content_text'
+          }
+        });
+
+        if (error) {
+          console.error('Generation error:', error);
+          setContents(prev => prev.map(item => 
+            item.id === pendingId 
+              ? { ...item, status: 'error' }
+              : item
+          ));
+          continue;
+        }
+
+        setContents(prev => prev.map(item => 
+          item.id === pendingId 
+            ? { ...item, content: data.content || data.generatedText, status: 'completed' }
+            : item
+        ));
+
+        toast({
+          title: "生成完了",
+          description: `${getTypeDisplayName(optionType)}が生成されました`,
+        });
+      }
+
+      toast({
+        title: "オプション生成完了！",
+        description: "選択されたオプションコンテンツの生成が完了しました",
+      });
+
+    } catch (error) {
+      console.error('Optional generation error:', error);
+      toast({
+        title: "エラー",
+        description: `オプションコンテンツ生成中にエラーが発生しました: ${error.message}`,
         variant: "destructive",
       });
     } finally {
@@ -242,6 +326,12 @@ const Index = () => {
             <InputSection 
               onGenerate={handleGenerate}
               isGenerating={isGenerating}
+            />
+          ) : activeStep === 'optional' ? (
+            <OptionalContentSelector
+              onGenerate={handleOptionalGenerate}
+              isGenerating={isGenerating}
+              generationStatus={generationStatus}
             />
           ) : (
             <ContentGrid 

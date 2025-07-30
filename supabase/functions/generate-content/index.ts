@@ -110,6 +110,12 @@ function getSystemPrompt(contentType: string): string {
       return `${basePrompt} スキャン読みしやすい商品販売LPを作成してください。`;
     case 'step_mails':
       return `${basePrompt} 心理的ステップに基づいたステップメールを作成してください。`;
+    case 'repost_bonus':
+      return `${basePrompt} 無料プレゼントから読者参加型のリポスト特典コンテンツを作成してください。`;
+    case 'webinar_script':
+      return `${basePrompt} 無料プレゼントを活用したウェビナー台本とスライド構成を作成してください。`;
+    case 'vsl_script':
+      return `${basePrompt} セールスレターを元にしたVSL台本とスライド構成を作成してください。`;
     default:
       return basePrompt;
   }
@@ -135,6 +141,12 @@ function getPromptForContentType(contentType: string, input: string, inputType: 
       return `${inputContext}\n\n上記のセールスレター内容から、スキャン読みしやすい商品販売LPを作成してください。セールスレターの構成を活かしつつ、LP形式に最適化してください。`;
     case 'step_mails':
       return `${inputContext}\n\n上記のセールスレター内容から、心理的ステップに基づいたステップメール（7通セット）を作成してください。セールスレターの内容を段階的に配信する形で構成してください。`;
+    case 'repost_bonus':
+      return `${inputContext}\n\n上記の無料プレゼント内容から、読者参加型のリポスト特典コンテンツを作成してください。SNSでの拡散を促すインセンティブ要素を含めてください。`;
+    case 'webinar_script':
+      return `${inputContext}\n\n上記の無料プレゼント内容から、ウェビナー台本とスライド構成を作成してください。90分のウェビナー構成で、教育→価値提供→自然なセールス導線を含めてください。`;
+    case 'vsl_script':
+      return `${inputContext}\n\n上記のセールスレター内容から、VSL（ビデオセールスレター）台本とスライド構成を作成してください。視覚的な要素とナレーション原稿を含む構成にしてください。`;
     default:
       return `${inputContext}\n\n上記の情報から、${contentType}を作成してください。`;
   }
@@ -148,7 +160,10 @@ function getTitleForContentType(contentType: string): string {
     'education_posts': '教育ポスト',
     'campaign_post': '企画ポスト',
     'long_lp': '商品販売用LP',
-    'step_mails': 'ステップメール'
+    'step_mails': 'ステップメール',
+    'repost_bonus': 'リポスト特典',
+    'webinar_script': 'ウェビナー台本とスライド',
+    'vsl_script': 'VSL台本とスライド'
   };
   return titles[contentType] || contentType;
 }
