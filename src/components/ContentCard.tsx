@@ -180,7 +180,13 @@ export function ContentCard({
                 </div>
               ) : (
                 <>
-                  <div className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">
+                  <div 
+                    className="text-sm text-foreground leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto scroll-smooth border border-border/50 rounded-md p-3"
+                    style={{
+                      scrollbarWidth: 'thin',
+                      scrollbarColor: 'hsl(var(--muted-foreground)) transparent'
+                    }}
+                  >
                     {displayContent}
                   </div>
                   {content.length > 200 && (
