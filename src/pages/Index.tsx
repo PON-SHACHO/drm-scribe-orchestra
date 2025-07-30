@@ -60,15 +60,14 @@ const Index = () => {
     setContents([]);
 
     try {
-      // Step 1: Generate core content types first
+      // Step 1: Generate core content types in parallel
       const coreTypes = ['free_content', 'sales_letter'];
       const generatedCoreContent: { [key: string]: string } = {};
 
-      // Generate core content first
-      for (const contentType of coreTypes) {
-        setGenerationStatus(`${getTypeDisplayName(contentType)}を生成しています...`);
-        
-        // Add pending item
+      setGenerationStatus('コアコンテンツを並列生成しています...');
+
+      // Add pending items for core content
+      const corePendingIds = coreTypes.map(contentType => {
         const pendingId = `${contentType}_${Date.now()}`;
         setContents(prev => [...prev, {
           id: pendingId,
@@ -77,50 +76,58 @@ const Index = () => {
           status: 'pending',
           category: getCategoryFromType(contentType)
         }]);
+        return { contentType, pendingId };
+      });
 
-        // Generate content
-        const { data, error } = await supabase.functions.invoke('generate-content', {
+      // Generate core content in parallel
+      const corePromises = coreTypes.map(contentType => 
+        supabase.functions.invoke('generate-content', {
           body: { 
             projectId: 'temp-project', 
             contentType, 
             input, 
             inputType 
           }
-        });
+        })
+      );
 
-        if (error) {
-          console.error('Generation error:', error);
-          // Update with error status
+      const coreResults = await Promise.allSettled(corePromises);
+
+      // Process core results
+      coreResults.forEach((result, index) => {
+        const { contentType, pendingId } = corePendingIds[index];
+        
+        if (result.status === 'fulfilled' && !result.value.error) {
+          const generatedContent = result.value.data.content || result.value.data.generatedText;
+          generatedCoreContent[contentType] = generatedContent;
+          
+          setContents(prev => prev.map(item => 
+            item.id === pendingId 
+              ? { ...item, content: generatedContent, status: 'completed' }
+              : item
+          ));
+
+          toast({
+            title: "生成完了",
+            description: `${getTypeDisplayName(contentType)}が生成されました`,
+          });
+        } else {
+          console.error('Core generation error:', result);
           setContents(prev => prev.map(item => 
             item.id === pendingId 
               ? { ...item, status: 'error' }
               : item
           ));
-          continue;
         }
+      });
 
-        // Update with completed content and store for derivative generation
-        const generatedContent = data.content || data.generatedText;
-        generatedCoreContent[contentType] = generatedContent;
-        
-        setContents(prev => prev.map(item => 
-          item.id === pendingId 
-            ? { ...item, content: generatedContent, status: 'completed' }
-            : item
-        ));
-
-        toast({
-          title: "生成完了",
-          description: `${getTypeDisplayName(contentType)}が生成されました`,
-        });
-      }
-
-      // Step 2: Generate derivative content based on core content
+      // Step 2: Generate derivative content in parallel by category
       const derivativeTypes = ['short_lp', 'education_posts', 'campaign_post', 'long_lp', 'step_mails'];
       
-      for (const contentType of derivativeTypes) {
-        setGenerationStatus(`${getTypeDisplayName(contentType)}を生成しています...`);
-        
+      setGenerationStatus('派生コンテンツを並列生成しています...');
+
+      // Add pending items for derivative content
+      const derivativePendingIds = derivativeTypes.map(contentType => {
         const pendingId = `${contentType}_${Date.now()}`;
         setContents(prev => [...prev, {
           id: pendingId,
@@ -129,12 +136,15 @@ const Index = () => {
           status: 'pending',
           category: getCategoryFromType(contentType)
         }]);
+        return { contentType, pendingId };
+      });
 
-        // Determine which core content to use as base
+      // Generate derivative content in parallel
+      const derivativePromises = derivativeTypes.map(contentType => {
         const baseContentType = getCategoryFromType(contentType) === 'free' ? 'free_content' : 'sales_letter';
         const baseContent = generatedCoreContent[baseContentType];
 
-        const { data, error } = await supabase.functions.invoke('generate-content', {
+        return supabase.functions.invoke('generate-content', {
           body: { 
             projectId: 'temp-project', 
             contentType, 
@@ -142,28 +152,36 @@ const Index = () => {
             inputType: 'content_text'
           }
         });
+      });
 
-        if (error) {
-          console.error('Generation error:', error);
+      const derivativeResults = await Promise.allSettled(derivativePromises);
+
+      // Process derivative results
+      derivativeResults.forEach((result, index) => {
+        const { contentType, pendingId } = derivativePendingIds[index];
+        
+        if (result.status === 'fulfilled' && !result.value.error) {
+          const generatedContent = result.value.data.content || result.value.data.generatedText;
+          
+          setContents(prev => prev.map(item => 
+            item.id === pendingId 
+              ? { ...item, content: generatedContent, status: 'completed' }
+              : item
+          ));
+
+          toast({
+            title: "生成完了",
+            description: `${getTypeDisplayName(contentType)}が生成されました`,
+          });
+        } else {
+          console.error('Derivative generation error:', result);
           setContents(prev => prev.map(item => 
             item.id === pendingId 
               ? { ...item, status: 'error' }
               : item
           ));
-          continue;
         }
-
-        setContents(prev => prev.map(item => 
-          item.id === pendingId 
-            ? { ...item, content: data.content || data.generatedText, status: 'completed' }
-            : item
-        ));
-
-        toast({
-          title: "生成完了",
-          description: `${getTypeDisplayName(contentType)}が生成されました`,
-        });
-      }
+      });
 
       // Store core content for optional generation
       setGeneratedCoreContent(generatedCoreContent);
