@@ -106,7 +106,20 @@ const Index = () => {
 
   const handlePlanSelect = (plan: string) => {
     setSelectedPlan(plan);
-    handleGenerate(`${productInfo}\n\n【選択された企画】\n${plan}`, 'product_info');
+    // インサイト分析結果、企画案、選択理由をすべて含めて生成
+    const fullContext = `【商品情報】
+${productInfo}
+
+【インサイト分析結果】
+${analysisResult}
+
+【提案された企画案】
+${planProposal}
+
+【選択された企画と理由】
+${plan}`;
+    
+    handleGenerate(fullContext, 'product_info');
   };
 
   const handleGenerate = async (input: string, inputType: 'product_info' | 'content_text') => {
