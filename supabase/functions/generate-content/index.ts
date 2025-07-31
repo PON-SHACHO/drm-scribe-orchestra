@@ -46,50 +46,61 @@ serve(async (req) => {
     const systemPrompt = customSystemPrompt || getSystemPrompt(contentType);
     const userPrompt = customUserPrompt || getPromptForContentType(contentType, input, inputType);
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        max_tokens: getMaxTokensForContentType(contentType),
-        temperature: isEvaluation ? 0.3 : 0.7, // 評価は低温度、生成は標準温度
-        top_p: 0.9,
-        presence_penalty: isImprovement ? 0.6 : 0.4, // 改善時は新規性を重視
-        frequency_penalty: 0.3,
-      }),
-    });
+    let generatedContent: string;
+    let finishReason = 'stop';
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    // 教育ポストは分割生成を使用
+    if (contentType === 'education_posts') {
+      console.log('Using batch generation for education_posts');
+      generatedContent = await generateEducationPostsInBatches(systemPrompt, userPrompt, openAIApiKey);
+    } else {
+      // 通常の生成処理
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: getMaxTokensForContentType(contentType),
+          temperature: isEvaluation ? 0.3 : 0.7, // 評価は低温度、生成は標準温度
+          top_p: 0.9,
+          presence_penalty: isImprovement ? 0.6 : 0.4, // 改善時は新規性を重視
+          frequency_penalty: 0.3,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenAI API error:', response.status, errorText);
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      }
+
+      const contentType_response = response.headers.get('content-type');
+      if (!contentType_response || !contentType_response.includes('application/json')) {
+        const errorText = await response.text();
+        console.error('OpenAI API returned non-JSON response:', errorText);
+        throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error('Unexpected OpenAI API response structure:', data);
+        throw new Error('Unexpected response structure from OpenAI API');
+      }
+
+      generatedContent = data.choices[0].message.content;
+      finishReason = data.choices[0].finish_reason;
     }
 
-    const contentType_response = response.headers.get('content-type');
-    if (!contentType_response || !contentType_response.includes('application/json')) {
-      const errorText = await response.text();
-      console.error('OpenAI API returned non-JSON response:', errorText);
-      throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      console.error('Unexpected OpenAI API response structure:', data);
-      throw new Error('Unexpected response structure from OpenAI API');
-    }
-
-    let generatedContent = data.choices[0].message.content;
-
-    // レスポンスの完全性をチェック
-    if (data.choices[0].finish_reason === 'length') {
+    // レスポンスの完全性をチェック（教育ポスト以外）
+    if (contentType !== 'education_posts' && finishReason === 'length') {
       console.warn(`Content generation was truncated due to length limit for ${contentType} (generation ${generationIndex})`);
       
       // 長いコンテンツタイプの場合、継続生成を実行
@@ -107,7 +118,7 @@ serve(async (req) => {
     }
 
     const logPrefix = isImprovement ? 'Improved' : isEvaluation ? 'Evaluated' : 'Generated';
-    console.log(`${logPrefix} ${contentType} for project ${projectId} (${generationIndex}) - Length: ${generatedContent?.length || 0} characters, Finish reason: ${data.choices[0].finish_reason}`);
+    console.log(`${logPrefix} ${contentType} for project ${projectId} (${generationIndex}) - Length: ${generatedContent?.length || 0} characters, Finish reason: ${finishReason}`);
 
     // 生成されたコンテンツが空でないことを確認
     if (!generatedContent || generatedContent.trim().length === 0) {
@@ -138,7 +149,7 @@ serve(async (req) => {
 function getMaxTokensForContentType(contentType: string): number {
   switch (contentType) {
     case 'education_posts':
-      return 24000; // 教育ポスト9本セットなので大幅に増加
+      return 16000; // GPT-4の上限内で最大に設定
     case 'sales_letter':
       return 16000; // セールスレターは長いため
     case 'free_content':
@@ -186,6 +197,67 @@ function getExpectedLengthForContentType(contentType: string): number {
     default:
       return 1000; // デフォルト
   }
+}
+
+// 教育ポスト（9本セット）を3回に分けて生成する関数
+async function generateEducationPostsInBatches(systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
+  const batches = [
+    { day: 'DAY1', posts: '1, 2, 3', theme: '問題提起' },
+    { day: 'DAY2', posts: '4, 5, 6', theme: '共感・期待' },
+    { day: 'DAY3', posts: '7, 8, 9', theme: '公開直前の案内' }
+  ];
+
+  let allPosts = '';
+
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+    const batchPrompt = `${userPrompt}
+
+この回では${batch.day}（${batch.theme}）の投稿${batch.posts}/9を生成してください。
+
+【出力形式】
+**${batch.day} 投稿${batch.posts.split(', ')[0]}/9**
+[ポスト内容]
+
+**${batch.day} 投稿${batch.posts.split(', ')[1]}/9**
+[ポスト内容]
+
+**${batch.day} 投稿${batch.posts.split(', ')[2]}/9**
+[ポスト内容]
+
+必ず3本すべてを完了してください。`;
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: batchPrompt }
+          ],
+          max_tokens: 12000,
+          temperature: 0.7,
+        }),
+      });
+
+      const data = await response.json();
+      const batchContent = data.choices[0]?.message?.content || '';
+      
+      console.log(`Generated ${batch.day} posts - Length: ${batchContent.length} characters`);
+      allPosts += batchContent + '\n\n';
+      
+    } catch (error) {
+      console.error(`Error generating ${batch.day} posts:`, error);
+      allPosts += `**${batch.day} 生成エラー**\n投稿${batch.posts}の生成に失敗しました。\n\n`;
+    }
+  }
+
+  return allPosts;
 }
 
 // 継続生成機能
@@ -850,9 +922,9 @@ ${inputContext}
     case 'education_posts':
       return `あなたはSNS上で心理的リードを獲得する教育ポストの専門家です。
 
-以下の無料プレゼントをもとに、**読者の関心を高め、noteへと誘導する予告ポストを**長文で**9本**作成してください。
+以下の無料プレゼントをもとに、**読者の関心を高め、noteへと誘導する予告ポストを**長文で**3本**作成してください。
 
-**重要：必ず9本すべてのポストを完全に生成してください。途中で止まることなく、すべてのポストを出力してください。**
+**重要：必ず3本すべてのポストを完全に生成してください。途中で止まることなく、すべてのポストを出力してください。**
 
 【前提】
 ・投稿媒体：X（旧Twitter）ですが、文字数制限は考慮不要です。
