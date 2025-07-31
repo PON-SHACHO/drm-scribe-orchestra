@@ -69,25 +69,39 @@ const Index = () => {
   };
 
   const handlePlanGenerate = async (analysisResult: string): Promise<string> => {
-    const response = await fetch('https://geksgxoznpjrsqpzmyhz.supabase.co/functions/v1/generate-content', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contentType: 'plan_proposal',
-        input: `${productInfo}\n\n【前回の分析結果】\n${analysisResult}`,
-        inputType: 'product_info'
-      }),
-    });
+    setIsGenerating(true);
+    setGenerationStatus('企画案を生成中...');
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-content', {
+        body: {
+          projectId: 'temp-project',
+          contentType: 'plan_proposal',
+          input: `${productInfo}\n\n【前回の分析結果】\n${analysisResult}`,
+          inputType: 'analysis_result'
+        }
+      });
 
-    if (response.ok) {
-      const data = await response.json();
-      const plan = data.content || data.generatedText;
-      setPlanProposal(plan);
-      return plan;
+      if (error) {
+        console.error('企画案生成エラー:', error);
+        throw error;
+      }
+
+      const planResult = data?.content || data?.generatedText;
+      
+      if (!planResult) {
+        throw new Error('企画案の生成結果が空です');
+      }
+      
+      setPlanProposal(planResult);
+      return planResult;
+
+    } catch (error) {
+      console.error('企画案生成エラー:', error);
+      throw error;
+    } finally {
+      setIsGenerating(false);
     }
-    throw new Error('企画案生成に失敗しました');
   };
 
   const handlePlanSelect = (plan: string) => {
