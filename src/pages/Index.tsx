@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { InputSection } from "@/components/InputSection";
 import { ContentGrid } from "@/components/ContentGrid";
 import { OptionalContentSelector } from "@/components/OptionalContentSelector";
+import { InsightsStep } from "@/components/InsightsStep";
 
 interface ContentItem {
   id: string;
@@ -15,12 +16,16 @@ interface ContentItem {
 }
 
 const Index = () => {
-  const [activeStep, setActiveStep] = useState<'input' | 'content' | 'optional'>('input');
+  const [activeStep, setActiveStep] = useState<'input' | 'insights' | 'content' | 'optional'>('input');
   const [contents, setContents] = useState<ContentItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState<string>('');
   const [coreContentGenerated, setCoreContentGenerated] = useState(false);
   const [generatedCoreContent, setGeneratedCoreContent] = useState<{ [key: string]: string }>({});
+  const [productInfo, setProductInfo] = useState<string>('');
+  const [analysisResult, setAnalysisResult] = useState<string>('');
+  const [planProposal, setPlanProposal] = useState<string>('');
+  const [selectedPlan, setSelectedPlan] = useState<string>('');
 
   const getTypeDisplayName = (type: string): string => {
     const names = {
@@ -52,6 +57,42 @@ const Index = () => {
       'vsl_script': 'optional' as const
     };
     return categories[type] || 'optional';
+  };
+
+  const handleStartInsights = (input: string) => {
+    setProductInfo(input);
+    setActiveStep('insights');
+  };
+
+  const handleAnalysisComplete = (analysis: string) => {
+    setAnalysisResult(analysis);
+  };
+
+  const handlePlanGenerate = async (analysisResult: string): Promise<string> => {
+    const response = await fetch('https://geksgxoznpjrsqpzmyhz.supabase.co/functions/v1/generate-content', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contentType: 'plan_proposal',
+        input: `${productInfo}\n\n【前回の分析結果】\n${analysisResult}`,
+        inputType: 'product_info'
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const plan = data.content || data.generatedText;
+      setPlanProposal(plan);
+      return plan;
+    }
+    throw new Error('企画案生成に失敗しました');
+  };
+
+  const handlePlanSelect = (plan: string) => {
+    setSelectedPlan(plan);
+    handleGenerate(`${productInfo}\n\n【選択された企画】\n${plan}`, 'product_info');
   };
 
   const handleGenerate = async (input: string, inputType: 'product_info' | 'content_text') => {
@@ -354,8 +395,19 @@ const Index = () => {
         <main className="flex-1">
           {activeStep === 'input' ? (
             <InputSection 
-              onGenerate={handleGenerate}
+              onGenerate={handleStartInsights}
               isGenerating={isGenerating}
+            />
+          ) : activeStep === 'insights' ? (
+            <InsightsStep
+              productInfo={productInfo}
+              onAnalysisComplete={handleAnalysisComplete}
+              onPlanSelect={handlePlanSelect}
+              onPlanGenerate={handlePlanGenerate}
+              analysisResult={analysisResult}
+              planProposal={planProposal}
+              isGenerating={isGenerating}
+              generationStatus={generationStatus}
             />
           ) : (
             <>
