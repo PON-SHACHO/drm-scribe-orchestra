@@ -47,8 +47,11 @@ serve(async (req) => {
           { role: 'system', content: getSystemPrompt(contentType) },
           { role: 'user', content: prompt }
         ],
-        max_tokens: 8000, // 長い出力に対応するため増加
-        temperature: 0.7, // 少し創造性を持たせる
+        max_tokens: 2000,
+        temperature: 0.7,
+        top_p: 0.9,
+        presence_penalty: 0.4,
+        frequency_penalty: 0.3,
       }),
     });
 
