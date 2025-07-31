@@ -49,10 +49,13 @@ serve(async (req) => {
     let generatedContent: string;
     let finishReason = 'stop';
 
-    // 教育ポストは分割生成を使用
+    // 教育ポストとセールスレターは分割生成を使用
     if (contentType === 'education_posts') {
       console.log('Using batch generation for education_posts');
       generatedContent = await generateEducationPostsInBatches(systemPrompt, userPrompt, openAIApiKey);
+    } else if (contentType === 'sales_letter') {
+      console.log('Using batch generation for sales_letter');
+      generatedContent = await generateSalesLetterInBatches(systemPrompt, userPrompt, openAIApiKey);
     } else {
       // 通常の生成処理
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -99,8 +102,8 @@ serve(async (req) => {
       finishReason = data.choices[0].finish_reason;
     }
 
-    // レスポンスの完全性をチェック（教育ポスト以外）
-    if (contentType !== 'education_posts' && finishReason === 'length') {
+    // レスポンスの完全性をチェック（教育ポストとセールスレター以外）
+    if (contentType !== 'education_posts' && contentType !== 'sales_letter' && finishReason === 'length') {
       console.warn(`Content generation was truncated due to length limit for ${contentType} (generation ${generationIndex})`);
       
       // 長いコンテンツタイプの場合、継続生成を実行
@@ -179,7 +182,7 @@ function getExpectedLengthForContentType(contentType: string): number {
     case 'education_posts':
       return 15000; // 9本セット（各1500-2000文字）なので大幅に増加
     case 'sales_letter':
-      return 6000; // セールスレターは長文
+      return 8000; // セールスレターは12ステップで長文
     case 'free_content':
       return 5000; // 無料プレゼントは中長文
     case 'long_lp':
@@ -197,6 +200,60 @@ function getExpectedLengthForContentType(contentType: string): number {
     default:
       return 1000; // デフォルト
   }
+}
+
+// セールスレターを3分割で生成する関数
+async function generateSalesLetterInBatches(systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
+  const sections = [
+    { steps: 'Step1-4', name: '導入・問題提起セクション', steps_list: ['Step1', 'Step2', 'Step3', 'Step4'] },
+    { steps: 'Step5-8', name: '解決策・証明セクション', steps_list: ['Step5', 'Step6', 'Step7', 'Step8'] },
+    { steps: 'Step9-12', name: '商品・クロージングセクション', steps_list: ['Step9', 'Step10', 'Step11', 'Step12'] }
+  ];
+
+  let fullSalesLetter = '';
+
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i];
+    const sectionPrompt = `${userPrompt}
+
+この回では${section.name}（${section.steps}）を生成してください。
+
+必ず以下のステップをすべて含めて完全に生成してください：
+${section.steps_list.map(step => `- ${step}`).join('\n')}
+
+各ステップは500ワード程度の充実した内容で、途中で切れることなく最後まで完成させてください。`;
+
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: sectionPrompt }
+          ],
+          max_tokens: 14000,
+          temperature: 0.7,
+        }),
+      });
+
+      const data = await response.json();
+      const sectionContent = data.choices[0]?.message?.content || '';
+      
+      console.log(`Generated sales letter ${section.name} - Length: ${sectionContent.length} characters`);
+      fullSalesLetter += sectionContent + '\n\n';
+      
+    } catch (error) {
+      console.error(`Error generating sales letter ${section.name}:`, error);
+      fullSalesLetter += `**${section.name} 生成エラー**\n${section.steps}の生成に失敗しました。\n\n`;
+    }
+  }
+
+  return fullSalesLetter;
 }
 
 // 教育ポスト（9本セット）を3回に分けて生成する関数
