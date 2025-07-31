@@ -58,7 +58,7 @@ serve(async (req) => {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 8000,
+        max_tokens: getMaxTokensForContentType(contentType),
         temperature: isEvaluation ? 0.3 : 0.7, // 評価は低温度、生成は標準温度
         top_p: 0.9,
         presence_penalty: isImprovement ? 0.6 : 0.4, // 改善時は新規性を重視
@@ -86,11 +86,24 @@ serve(async (req) => {
       throw new Error('Unexpected response structure from OpenAI API');
     }
 
-    const generatedContent = data.choices[0].message.content;
+    let generatedContent = data.choices[0].message.content;
 
     // レスポンスの完全性をチェック
     if (data.choices[0].finish_reason === 'length') {
       console.warn(`Content generation was truncated due to length limit for ${contentType} (generation ${generationIndex})`);
+      
+      // 長いコンテンツタイプの場合、継続生成を実行
+      if (isLongContentType(contentType)) {
+        console.log(`Starting continuation generation for ${contentType}`);
+        generatedContent = await generateContinuation(generatedContent, systemPrompt, userPrompt, openAIApiKey);
+      }
+    }
+
+    // 短いコンテンツの検知とフィードバックループ
+    const expectedLength = getExpectedLengthForContentType(contentType);
+    if (generatedContent.length < expectedLength * 0.7 && !isImprovement) {
+      console.log(`Content is shorter than expected for ${contentType}. Expected: ${expectedLength}, Actual: ${generatedContent.length}. Starting feedback improvement...`);
+      generatedContent = await improveTruncatedContent(generatedContent, systemPrompt, userPrompt, openAIApiKey, contentType);
     }
 
     const logPrefix = isImprovement ? 'Improved' : isEvaluation ? 'Evaluated' : 'Generated';
@@ -120,6 +133,145 @@ serve(async (req) => {
     });
   }
 });
+
+// コンテンツタイプ別の最大トークン数設定
+function getMaxTokensForContentType(contentType: string): number {
+  switch (contentType) {
+    case 'education_posts':
+      return 16000; // 教育ポスト9本セットは長いため
+    case 'sales_letter':
+      return 16000; // セールスレターは長いため
+    case 'free_content':
+      return 12000; // 無料プレゼントも長め
+    case 'long_lp':
+      return 12000; // 長いLPも長め
+    case 'step_mails':
+      return 12000; // ステップメールも長め
+    case 'webinar_script':
+      return 12000; // ウェビナー台本も長め
+    case 'vsl_script':
+      return 12000; // VSL台本も長め
+    default:
+      return 8000; // デフォルト
+  }
+}
+
+// 長いコンテンツタイプかどうかの判定
+function isLongContentType(contentType: string): boolean {
+  const longContentTypes = ['education_posts', 'sales_letter', 'free_content', 'long_lp', 'step_mails', 'webinar_script', 'vsl_script'];
+  return longContentTypes.includes(contentType);
+}
+
+// コンテンツタイプ別の期待文字数
+function getExpectedLengthForContentType(contentType: string): number {
+  switch (contentType) {
+    case 'education_posts':
+      return 8000; // 9本セットなので十分長い
+    case 'sales_letter':
+      return 6000; // セールスレターは長文
+    case 'free_content':
+      return 5000; // 無料プレゼントは中長文
+    case 'long_lp':
+      return 4000; // 長いLP
+    case 'step_mails':
+      return 4000; // ステップメール
+    case 'webinar_script':
+      return 4000; // ウェビナー台本
+    case 'vsl_script':
+      return 4000; // VSL台本
+    case 'insights_analysis':
+      return 1500; // インサイト分析
+    case 'plan_proposal':
+      return 2000; // 企画案
+    default:
+      return 1000; // デフォルト
+  }
+}
+
+// 継続生成機能
+async function generateContinuation(existingContent: string, systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
+  try {
+    const continuationPrompt = `以下は途中で切れてしまったコンテンツです。このコンテンツの続きを自然に完成させてください。
+    
+既存のコンテンツ:
+${existingContent}
+
+続きを生成する際の注意点:
+- 既存部分と自然につながるように書く
+- コンテンツの本来の目的を完遂する
+- 最後まで完結させる
+- 既存部分は繰り返さず、続きのみを出力する`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: continuationPrompt }
+        ],
+        max_tokens: 8000,
+        temperature: 0.7,
+      }),
+    });
+
+    const data = await response.json();
+    const continuation = data.choices[0]?.message?.content || '';
+    
+    console.log(`Generated continuation - Length: ${continuation.length} characters`);
+    return existingContent + continuation;
+  } catch (error) {
+    console.error('Error in continuation generation:', error);
+    return existingContent; // エラー時は元のコンテンツを返す
+  }
+}
+
+// 短いコンテンツの改善機能
+async function improveTruncatedContent(content: string, systemPrompt: string, userPrompt: string, apiKey: string, contentType: string): Promise<string> {
+  try {
+    const improvementPrompt = `以下のコンテンツは期待される長さよりも短く生成されました。このコンテンツを適切な長さまで拡充・改善してください。
+
+現在のコンテンツ:
+${content}
+
+改善要求:
+- ${contentType}として期待される分量まで拡充する
+- 質を落とさず、より詳細で価値ある内容に発展させる
+- 構造を整理し、読みやすくする
+- 必要に応じて事例や具体例を追加する
+- 最後まで完結した内容にする`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: improvementPrompt }
+        ],
+        max_tokens: getMaxTokensForContentType(contentType),
+        temperature: 0.6, // 改善時は少し低めの温度
+      }),
+    });
+
+    const data = await response.json();
+    const improvedContent = data.choices[0]?.message?.content || content;
+    
+    console.log(`Improved truncated content - Original: ${content.length}, Improved: ${improvedContent.length} characters`);
+    return improvedContent;
+  } catch (error) {
+    console.error('Error in content improvement:', error);
+    return content; // エラー時は元のコンテンツを返す
+  }
+}
 
 function getSystemPrompt(contentType: string): string {
   const basePrompt = "あなたは高反応のマーケティングコンテンツ作成の専門家です。日本語で回答してください。**出力は必ずスマホ表示に最適化してください：適度な改行（60-80文字程度で改行）、空行を効果的に使用し、読みやすい段落構成にしてください。**";
