@@ -17,17 +17,7 @@ serve(async (req) => {
   }
 
   try {
-    const { 
-      projectId, 
-      contentType, 
-      input, 
-      inputType, 
-      systemPrompt: customSystemPrompt,
-      userPrompt: customUserPrompt,
-      isImprovement = false,
-      isEvaluation = false,
-      generationIndex = 0
-    } = await req.json();
+    const { projectId, contentType, input, inputType } = await req.json();
     
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: req.headers.get('Authorization')! } }
@@ -43,85 +33,56 @@ serve(async (req) => {
     const userId = 'temp-user-id';
 
     // Generate content based on type
-    const systemPrompt = customSystemPrompt || getSystemPrompt(contentType);
-    const userPrompt = customUserPrompt || getPromptForContentType(contentType, input, inputType);
+    const prompt = getPromptForContentType(contentType, input, inputType);
     
-    let generatedContent: string;
-    let finishReason = 'stop';
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${openAIApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: getSystemPrompt(contentType) },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 2000,
+        temperature: 0.7,
+        top_p: 0.9,
+        presence_penalty: 0.4,
+        frequency_penalty: 0.3,
+      }),
+    });
 
-    // 教育ポストとセールスレターは分割生成を使用
-    if (contentType === 'education_posts') {
-      console.log('Using batch generation for education_posts');
-      generatedContent = await generateEducationPostsInBatches(systemPrompt, userPrompt, openAIApiKey);
-    } else if (contentType === 'sales_letter') {
-      console.log('Using batch generation for sales_letter');
-      generatedContent = await generateSalesLetterInBatches(systemPrompt, userPrompt, openAIApiKey);
-    } else {
-      // 通常の生成処理
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openAIApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          max_tokens: getMaxTokensForContentType(contentType),
-          temperature: isEvaluation ? 0.3 : 0.7, // 評価は低温度、生成は標準温度
-          top_p: 0.9,
-          presence_penalty: isImprovement ? 0.6 : 0.4, // 改善時は新規性を重視
-          frequency_penalty: 0.3,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('OpenAI API error:', response.status, errorText);
-        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
-      }
-
-      const contentType_response = response.headers.get('content-type');
-      if (!contentType_response || !contentType_response.includes('application/json')) {
-        const errorText = await response.text();
-        console.error('OpenAI API returned non-JSON response:', errorText);
-        throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
-      }
-
-      const data = await response.json();
-      
-      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-        console.error('Unexpected OpenAI API response structure:', data);
-        throw new Error('Unexpected response structure from OpenAI API');
-      }
-
-      generatedContent = data.choices[0].message.content;
-      finishReason = data.choices[0].finish_reason;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
+      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
     }
 
-    // レスポンスの完全性をチェック（教育ポストとセールスレター以外）
-    if (contentType !== 'education_posts' && contentType !== 'sales_letter' && finishReason === 'length') {
-      console.warn(`Content generation was truncated due to length limit for ${contentType} (generation ${generationIndex})`);
-      
-      // 長いコンテンツタイプの場合、継続生成を実行
-      if (isLongContentType(contentType)) {
-        console.log(`Starting continuation generation for ${contentType}`);
-        generatedContent = await generateContinuation(generatedContent, systemPrompt, userPrompt, openAIApiKey);
-      }
+    const contentType_response = response.headers.get('content-type');
+    if (!contentType_response || !contentType_response.includes('application/json')) {
+      const errorText = await response.text();
+      console.error('OpenAI API returned non-JSON response:', errorText);
+      throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
     }
 
-    // 短いコンテンツの検知とフィードバックループ
-    const expectedLength = getExpectedLengthForContentType(contentType);
-    if (generatedContent.length < expectedLength * 0.7 && !isImprovement) {
-      console.log(`Content is shorter than expected for ${contentType}. Expected: ${expectedLength}, Actual: ${generatedContent.length}. Starting feedback improvement...`);
-      generatedContent = await improveTruncatedContent(generatedContent, systemPrompt, userPrompt, openAIApiKey, contentType);
+    const data = await response.json();
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error('Unexpected OpenAI API response structure:', data);
+      throw new Error('Unexpected response structure from OpenAI API');
     }
 
-    const logPrefix = isImprovement ? 'Improved' : isEvaluation ? 'Evaluated' : 'Generated';
-    console.log(`${logPrefix} ${contentType} for project ${projectId} (${generationIndex}) - Length: ${generatedContent?.length || 0} characters, Finish reason: ${finishReason}`);
+    const generatedContent = data.choices[0].message.content;
+
+    // レスポンスの完全性をチェック
+    if (data.choices[0].finish_reason === 'length') {
+      console.warn(`Content generation was truncated due to length limit for ${contentType}`);
+    }
+
+    console.log(`Generated ${contentType} for project ${projectId} - Length: ${generatedContent?.length || 0} characters, Finish reason: ${data.choices[0].finish_reason}`);
 
     // 生成されたコンテンツが空でないことを確認
     if (!generatedContent || generatedContent.trim().length === 0) {
@@ -148,260 +109,6 @@ serve(async (req) => {
   }
 });
 
-// コンテンツタイプ別の最大トークン数設定
-function getMaxTokensForContentType(contentType: string): number {
-  switch (contentType) {
-    case 'education_posts':
-      return 16000; // GPT-4の上限内で最大に設定
-    case 'sales_letter':
-      return 16000; // セールスレターは長いため
-    case 'free_content':
-      return 12000; // 無料プレゼントも長め
-    case 'long_lp':
-      return 12000; // 長いLPも長め
-    case 'step_mails':
-      return 12000; // ステップメールも長め
-    case 'webinar_script':
-      return 12000; // ウェビナー台本も長め
-    case 'vsl_script':
-      return 12000; // VSL台本も長め
-    default:
-      return 8000; // デフォルト
-  }
-}
-
-// 長いコンテンツタイプかどうかの判定
-function isLongContentType(contentType: string): boolean {
-  const longContentTypes = ['education_posts', 'sales_letter', 'free_content', 'long_lp', 'step_mails', 'webinar_script', 'vsl_script'];
-  return longContentTypes.includes(contentType);
-}
-
-// コンテンツタイプ別の期待文字数
-function getExpectedLengthForContentType(contentType: string): number {
-  switch (contentType) {
-    case 'education_posts':
-      return 15000; // 9本セット（各1500-2000文字）なので大幅に増加
-    case 'sales_letter':
-      return 8000; // セールスレターは12ステップで長文
-    case 'free_content':
-      return 5000; // 無料プレゼントは中長文
-    case 'long_lp':
-      return 4000; // 長いLP
-    case 'step_mails':
-      return 4000; // ステップメール
-    case 'webinar_script':
-      return 4000; // ウェビナー台本
-    case 'vsl_script':
-      return 4000; // VSL台本
-    case 'insights_analysis':
-      return 1500; // インサイト分析
-    case 'plan_proposal':
-      return 2000; // 企画案
-    default:
-      return 1000; // デフォルト
-  }
-}
-
-// セールスレターを3分割で生成する関数
-async function generateSalesLetterInBatches(systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
-  const sections = [
-    { steps: 'Step1-4', name: '導入・問題提起セクション', steps_list: ['Step1', 'Step2', 'Step3', 'Step4'] },
-    { steps: 'Step5-8', name: '解決策・証明セクション', steps_list: ['Step5', 'Step6', 'Step7', 'Step8'] },
-    { steps: 'Step9-12', name: '商品・クロージングセクション', steps_list: ['Step9', 'Step10', 'Step11', 'Step12'] }
-  ];
-
-  let fullSalesLetter = '';
-
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
-    const sectionPrompt = `${userPrompt}
-
-この回では${section.name}（${section.steps}）を生成してください。
-
-必ず以下のステップをすべて含めて完全に生成してください：
-${section.steps_list.map(step => `- ${step}`).join('\n')}
-
-各ステップは500ワード程度の充実した内容で、途中で切れることなく最後まで完成させてください。`;
-
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: sectionPrompt }
-          ],
-          max_tokens: 14000,
-          temperature: 0.7,
-        }),
-      });
-
-      const data = await response.json();
-      const sectionContent = data.choices[0]?.message?.content || '';
-      
-      console.log(`Generated sales letter ${section.name} - Length: ${sectionContent.length} characters`);
-      fullSalesLetter += sectionContent + '\n\n';
-      
-    } catch (error) {
-      console.error(`Error generating sales letter ${section.name}:`, error);
-      fullSalesLetter += `**${section.name} 生成エラー**\n${section.steps}の生成に失敗しました。\n\n`;
-    }
-  }
-
-  return fullSalesLetter;
-}
-
-// 教育ポスト（9本セット）を3回に分けて生成する関数
-async function generateEducationPostsInBatches(systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
-  const batches = [
-    { day: 'DAY1', posts: '1, 2, 3', theme: '問題提起' },
-    { day: 'DAY2', posts: '4, 5, 6', theme: '共感・期待' },
-    { day: 'DAY3', posts: '7, 8, 9', theme: '公開直前の案内' }
-  ];
-
-  let allPosts = '';
-
-  for (let i = 0; i < batches.length; i++) {
-    const batch = batches[i];
-    const batchPrompt = `${userPrompt}
-
-この回では${batch.day}（${batch.theme}）の投稿${batch.posts}/9を生成してください。
-
-【出力形式】
-**${batch.day} 投稿${batch.posts.split(', ')[0]}/9**
-[ポスト内容]
-
-**${batch.day} 投稿${batch.posts.split(', ')[1]}/9**
-[ポスト内容]
-
-**${batch.day} 投稿${batch.posts.split(', ')[2]}/9**
-[ポスト内容]
-
-必ず3本すべてを完了してください。`;
-
-    try {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: batchPrompt }
-          ],
-          max_tokens: 12000,
-          temperature: 0.7,
-        }),
-      });
-
-      const data = await response.json();
-      const batchContent = data.choices[0]?.message?.content || '';
-      
-      console.log(`Generated ${batch.day} posts - Length: ${batchContent.length} characters`);
-      allPosts += batchContent + '\n\n';
-      
-    } catch (error) {
-      console.error(`Error generating ${batch.day} posts:`, error);
-      allPosts += `**${batch.day} 生成エラー**\n投稿${batch.posts}の生成に失敗しました。\n\n`;
-    }
-  }
-
-  return allPosts;
-}
-
-// 継続生成機能
-async function generateContinuation(existingContent: string, systemPrompt: string, userPrompt: string, apiKey: string): Promise<string> {
-  try {
-    const continuationPrompt = `以下は途中で切れてしまったコンテンツです。このコンテンツの続きを自然に完成させてください。
-    
-既存のコンテンツ:
-${existingContent}
-
-続きを生成する際の注意点:
-- 既存部分と自然につながるように書く
-- コンテンツの本来の目的を完遂する
-- 最後まで完結させる
-- 既存部分は繰り返さず、続きのみを出力する`;
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: continuationPrompt }
-        ],
-        max_tokens: 8000,
-        temperature: 0.7,
-      }),
-    });
-
-    const data = await response.json();
-    const continuation = data.choices[0]?.message?.content || '';
-    
-    console.log(`Generated continuation - Length: ${continuation.length} characters`);
-    return existingContent + continuation;
-  } catch (error) {
-    console.error('Error in continuation generation:', error);
-    return existingContent; // エラー時は元のコンテンツを返す
-  }
-}
-
-// 短いコンテンツの改善機能
-async function improveTruncatedContent(content: string, systemPrompt: string, userPrompt: string, apiKey: string, contentType: string): Promise<string> {
-  try {
-    const improvementPrompt = `以下のコンテンツは期待される長さよりも短く生成されました。このコンテンツを適切な長さまで拡充・改善してください。
-
-現在のコンテンツ:
-${content}
-
-改善要求:
-- ${contentType}として期待される分量まで拡充する
-- 質を落とさず、より詳細で価値ある内容に発展させる
-- 構造を整理し、読みやすくする
-- 必要に応じて事例や具体例を追加する
-- 最後まで完結した内容にする`;
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: improvementPrompt }
-        ],
-        max_tokens: getMaxTokensForContentType(contentType),
-        temperature: 0.6, // 改善時は少し低めの温度
-      }),
-    });
-
-    const data = await response.json();
-    const improvedContent = data.choices[0]?.message?.content || content;
-    
-    console.log(`Improved truncated content - Original: ${content.length}, Improved: ${improvedContent.length} characters`);
-    return improvedContent;
-  } catch (error) {
-    console.error('Error in content improvement:', error);
-    return content; // エラー時は元のコンテンツを返す
-  }
-}
-
 function getSystemPrompt(contentType: string): string {
   const basePrompt = "あなたは高反応のマーケティングコンテンツ作成の専門家です。日本語で回答してください。**出力は必ずスマホ表示に最適化してください：適度な改行（60-80文字程度で改行）、空行を効果的に使用し、読みやすい段落構成にしてください。**";
   
@@ -417,7 +124,7 @@ function getSystemPrompt(contentType: string): string {
     case 'short_lp':
       return `${basePrompt} メール登録を促す短尺LPを作成してください。`;
     case 'education_posts':
-       return `${basePrompt} **必ず9本の独立した教育ポストを完全に生成してください。** 各ポストは完全な内容で、読者に価値を提供する教育的なコンテンツである必要があります。`;
+      return `${basePrompt} SNS向け教育ポストを作成してください。独立したテーマで読みたくなる余白を残してください。`;
     case 'campaign_post':
       return `${basePrompt} SNSでの企画ポスト（告知）を作成してください。`;
     case 'long_lp':
@@ -454,7 +161,6 @@ function getPromptForContentType(contentType: string, input: string, inputType: 
 ・【潜在的なインサイト（葛藤や願望）】：  
 ・【リードマグネットで惹きつけたい心理ポイント】：  
 
-この分析を提示したうえで、「リードマグネットの企画案を5つ出します」とユーザーに告げてください。
 
 ▼商品情報：
 ${inputContext}
@@ -464,22 +170,12 @@ ${inputContext}
       return `
 【ステップ2：企画案の提示】
 前回分析した結果に基づき、リードマグネットの企画案を5つ提案してください。
-**重要：無料プレゼントはnote（テキストオンリー）の教材のみとし、ウェビナーやメール講座は提案しないでください。**
-
 それぞれの構成：
 
-【無料プレゼント案】: 【タイトル】（魅力的で、ベネフィットと意外性が伝わるもの）（noteテキスト教材）
-【特典案】： 【タイトル】（チェックリスト、診断、テンプレ集、ワークシートなど - すべてnoteテキスト形式）  
-【企画概要】： （どんなnoteテキスト教材を提供し、どんな体験・変化が得られるか）  
+【無料プレゼント案】: 【タイトル】（魅力的で、ベネフィットと意外性が伝わるもの）（有益情報コンテンツ）
+【特典案】： 【タイトル】（チェックリスト、診断、ミニ講座、テンプレ集など）  
+【企画概要】： （何を提供し、どんな体験・変化が得られるか）  
 【ねらい】： （どう読者心理を動かし、バックエンドにつなげるか）  
-
-**提案できる形式例：**
-- noteテキスト教材（PDF化可能なもの）
-- チェックリスト（テキスト形式）
-- 診断シート（テキスト形式）
-- テンプレート集（テキスト形式）
-- ワークシート（テキスト形式）
-- ミニ電子書籍（テキスト形式）
 
 最後に、ユーザーにこう問いかけてください：
 「この中で最もあなたの世界観・価値観にフィットする番号を教えてください。その選択をもとに、リードマグネット戦略を構築していきます。」
@@ -491,20 +187,11 @@ ${inputContext}
     case 'free_content':
       return `あなたは心理学・行動デザイン・マーケティングのすべてに通じた一流ライターです。
 
-**重要：以下の情報を必ず活用してください**
-
-${inputContext}
-
-上記の【インサイト分析結果】と【選択された企画と理由】を必ず参考にして、その内容に合致する無料プレゼントコンテンツを作成してください。
+以下の商品情報に基づいて、読者の心に強い"認知的揺さぶり"と"実践欲"を生む**無料プレゼントコンテンツ**を作成してください。（約5,000字）
 
 このコンテンツは、商品を直接的に説明するものではなく、「読者の自己変革を支援することで、商品への関心・信頼を自然に生み出す」ためのリードマグネットです。
 
 ---
-
-【必須要件】
-- インサイト分析で特定されたターゲットの葛藤・願望に必ず応える内容にする
-- 選択された企画案の方向性と完全に一致させる
-- 企画案で提示されたコンテンツ形式（noteテキスト教材）で作成する
 
 【目的】
 - 読者の「世界の見え方」を変える
@@ -716,12 +403,9 @@ Step5：本文執筆フェーズ
 ・章ごとの論点が明確に分かれ、読者の思考がスムーズに移行する構成
 ・構文が目的と内容に合っており、情報が効果的に伝わる
 ・アウトライン段階で口調や流れを確認してから本文に進む`;
-     case 'sales_letter':
-      return `**重要：以下の情報を必ず活用してください**
-
+    case 'sales_letter':
+      return `【商品情報】
 ${inputContext}
-
-上記の【インサイト分析結果】【企画案】【選択された企画と理由】を必ず参考にして、それらの内容に完全に合致するセールスレターを作成してください。
 
 読者の買わない理由を徹底的に消し、感情と行動を同時に動かすセールスレターを作成する
 
@@ -979,9 +663,7 @@ ${inputContext}
     case 'education_posts':
       return `あなたはSNS上で心理的リードを獲得する教育ポストの専門家です。
 
-以下の無料プレゼントをもとに、**読者の関心を高め、noteへと誘導する予告ポストを**長文で**3本**作成してください。
-
-**重要：必ず3本すべてのポストを完全に生成してください。途中で止まることなく、すべてのポストを出力してください。**
+以下の無料プレゼントをもとに、**読者の関心を高め、noteへと誘導する予告ポストを**長文で**9本**作成してください。
 
 【前提】
 ・投稿媒体：X（旧Twitter）ですが、文字数制限は考慮不要です。
@@ -994,38 +676,7 @@ ${inputContext}
 ・**コピー調の短文や箇条書きではなく、ストーリーやエッセイのような文体**で書くこと。
 ・各ポストの構造は「導入→背景→気づき→読者への問いかけ」など、自然な文章構成で展開すること。
 ・できるだけ「書き手の語り」が感じられる文体で書くこと（講座を届けたいという熱量を込めて）。
-
-【出力形式】
-各ポストには明確な番号を付けてください：
-
-**DAY1 投稿1/9**
-[ポスト内容]
-
-**DAY1 投稿2/9**
-[ポスト内容]
-
-**DAY1 投稿3/9**
-[ポスト内容]
-
-**DAY2 投稿4/9**
-[ポスト内容]
-
-**DAY2 投稿5/9**
-[ポスト内容]
-
-**DAY2 投稿6/9**
-[ポスト内容]
-
-**DAY3 投稿7/9**
-[ポスト内容]
-
-**DAY3 投稿8/9**
-[ポスト内容]
-
-**DAY3 投稿9/9**
-[ポスト内容]
-
-必ず9本すべてを完了してください。
+・出力は1日分ずつ（3ポストずつ）分割してもよい。
 
 参照ナレッジ：読まれる長文ポストの奥義
 
