@@ -17,7 +17,17 @@ serve(async (req) => {
   }
 
   try {
-    const { projectId, contentType, input, inputType } = await req.json();
+    const { 
+      projectId, 
+      contentType, 
+      input, 
+      inputType, 
+      systemPrompt: customSystemPrompt,
+      userPrompt: customUserPrompt,
+      isImprovement = false,
+      isEvaluation = false,
+      generationIndex = 0
+    } = await req.json();
     
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: req.headers.get('Authorization')! } }
@@ -33,7 +43,8 @@ serve(async (req) => {
     const userId = 'temp-user-id';
 
     // Generate content based on type
-    const prompt = getPromptForContentType(contentType, input, inputType);
+    const systemPrompt = customSystemPrompt || getSystemPrompt(contentType);
+    const userPrompt = customUserPrompt || getPromptForContentType(contentType, input, inputType);
     
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -44,13 +55,13 @@ serve(async (req) => {
       body: JSON.stringify({
         model: 'gpt-4o',
         messages: [
-          { role: 'system', content: getSystemPrompt(contentType) },
-          { role: 'user', content: prompt }
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
         ],
         max_tokens: 8000,
-        temperature: 0.7,
+        temperature: isEvaluation ? 0.3 : 0.7, // 評価は低温度、生成は標準温度
         top_p: 0.9,
-        presence_penalty: 0.4,
+        presence_penalty: isImprovement ? 0.6 : 0.4, // 改善時は新規性を重視
         frequency_penalty: 0.3,
       }),
     });
@@ -79,10 +90,11 @@ serve(async (req) => {
 
     // レスポンスの完全性をチェック
     if (data.choices[0].finish_reason === 'length') {
-      console.warn(`Content generation was truncated due to length limit for ${contentType}`);
+      console.warn(`Content generation was truncated due to length limit for ${contentType} (generation ${generationIndex})`);
     }
 
-    console.log(`Generated ${contentType} for project ${projectId} - Length: ${generatedContent?.length || 0} characters, Finish reason: ${data.choices[0].finish_reason}`);
+    const logPrefix = isImprovement ? 'Improved' : isEvaluation ? 'Evaluated' : 'Generated';
+    console.log(`${logPrefix} ${contentType} for project ${projectId} (${generationIndex}) - Length: ${generatedContent?.length || 0} characters, Finish reason: ${data.choices[0].finish_reason}`);
 
     // 生成されたコンテンツが空でないことを確認
     if (!generatedContent || generatedContent.trim().length === 0) {
