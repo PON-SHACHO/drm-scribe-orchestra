@@ -408,6 +408,7 @@ const Index = () => {
               planProposal={planProposal}
               isGenerating={isGenerating}
               generationStatus={generationStatus}
+              setIsGenerating={setIsGenerating}
             />
           ) : (
             <>

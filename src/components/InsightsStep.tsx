@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Target, Brain, ArrowRight, Lightbulb } from "lucide-react";
 import { ContentCard } from "./ContentCard";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 
 interface InsightsStepProps {
   productInfo: string;
@@ -14,6 +16,7 @@ interface InsightsStepProps {
   planProposal?: string;
   isGenerating: boolean;
   generationStatus: string;
+  setIsGenerating: (loading: boolean) => void;
 }
 
 export function InsightsStep({ 
@@ -24,32 +27,89 @@ export function InsightsStep({
   analysisResult, 
   planProposal,
   isGenerating,
-  generationStatus 
+  generationStatus,
+  setIsGenerating
 }: InsightsStepProps) {
   const [selectedPlan, setSelectedPlan] = useState<string>("");
 
   const handleAnalysisGenerate = async () => {
-    const response = await fetch('https://geksgxoznpjrsqpzmyhz.supabase.co/functions/v1/generate-content', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contentType: 'insights_analysis',
-        input: productInfo,
-        inputType: 'product_info'
-      }),
-    });
+    console.log('インサイト分析開始ボタンがクリックされました');
+    console.log('商品情報:', productInfo);
+    
+    if (!productInfo?.trim()) {
+      toast({
+        title: "エラー",
+        description: "商品情報が入力されていません",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    if (response.ok) {
-      const data = await response.json();
-      onAnalysisComplete(data.content || data.generatedText);
+    setIsGenerating(true);
+    
+    try {
+      console.log('APIを呼び出し中...');
+      
+      const { data, error } = await supabase.functions.invoke('generate-content', {
+        body: {
+          projectId: 'temp-project',
+          contentType: 'insights_analysis',
+          input: productInfo,
+          inputType: 'product_info'
+        }
+      });
+
+      console.log('API呼び出し結果:', { data, error });
+
+      if (error) {
+        console.error('API呼び出しエラー:', error);
+        throw error;
+      }
+
+      const analysisResult = data?.content || data?.generatedText;
+      console.log('分析結果:', analysisResult);
+      
+      if (!analysisResult) {
+        throw new Error('分析結果が空です');
+      }
+
+      onAnalysisComplete(analysisResult);
+      
+      toast({
+        title: "分析完了",
+        description: "ターゲットインサイト分析が完了しました",
+      });
+
+    } catch (error) {
+      console.error('インサイト分析エラー:', error);
+      toast({
+        title: "エラー",
+        description: `分析中にエラーが発生しました: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   const handlePlanGenerate = async () => {
-    const planResult = await onPlanGenerate(analysisResult || '');
-    // planResult は親コンポーネントで管理されます
+    setIsGenerating(true);
+    try {
+      const planResult = await onPlanGenerate(analysisResult || '');
+      toast({
+        title: "企画案生成完了",
+        description: "リードマグネット企画案が生成されました",
+      });
+    } catch (error) {
+      console.error('企画案生成エラー:', error);
+      toast({
+        title: "エラー",
+        description: `企画案生成中にエラーが発生しました: ${error.message}`,
+        variant: "destructive",
+      });
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handlePlanSelection = () => {
