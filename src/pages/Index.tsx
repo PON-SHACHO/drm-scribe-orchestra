@@ -407,39 +407,48 @@ const Index = () => {
           generationStatus={generationStatus}
         />
         <main className="flex-1">
-          {activeStep === 'input' ? (
-            <InputSection 
-              onGenerate={handleStartInsights}
-              isGenerating={isGenerating}
-            />
-          ) : activeStep === 'insights' ? (
-            <InsightsStep
-              productInfo={productInfo}
-              onAnalysisComplete={handleAnalysisComplete}
-              onPlanSelect={handlePlanSelect}
-              onPlanGenerate={handlePlanGenerate}
-              analysisResult={analysisResult}
-              planProposal={planProposal}
-              isGenerating={isGenerating}
-              generationStatus={generationStatus}
-              setIsGenerating={setIsGenerating}
-            />
-          ) : (
-            <>
-              {activeStep === 'optional' && (
-                <OptionalContentSelector
-                  onGenerate={handleOptionalGenerate}
-                  isGenerating={isGenerating}
-                  generationStatus={generationStatus}
-                />
-              )}
+          <div className="space-y-8">
+            {/* インプットセクション - 常に表示 */}
+            {activeStep === 'input' && (
+              <InputSection 
+                onGenerate={handleStartInsights}
+                isGenerating={isGenerating}
+              />
+            )}
+            
+            {/* インサイトステップ - インプット後に表示 */}
+            {(activeStep === 'insights' || activeStep === 'content' || activeStep === 'optional') && (
+              <InsightsStep
+                productInfo={productInfo}
+                onAnalysisComplete={handleAnalysisComplete}
+                onPlanSelect={handlePlanSelect}
+                onPlanGenerate={handlePlanGenerate}
+                analysisResult={analysisResult}
+                planProposal={planProposal}
+                isGenerating={isGenerating}
+                generationStatus={generationStatus}
+                setIsGenerating={setIsGenerating}
+              />
+            )}
+            
+            {/* オプションコンテンツセレクター - コンテンツ生成後に表示 */}
+            {activeStep === 'optional' && (
+              <OptionalContentSelector
+                onGenerate={handleOptionalGenerate}
+                isGenerating={isGenerating}
+                generationStatus={generationStatus}
+              />
+            )}
+            
+            {/* コンテンツグリッド - コンテンツ生成後に表示 */}
+            {(activeStep === 'content' || activeStep === 'optional') && contents.length > 0 && (
               <ContentGrid 
                 contents={contents}
                 onRegenerate={handleRegenerate}
                 onEdit={handleEdit}
               />
-            </>
-          )}
+            )}
+          </div>
         </main>
       </div>
     </div>
