@@ -138,7 +138,7 @@ serve(async (req) => {
 function getMaxTokensForContentType(contentType: string): number {
   switch (contentType) {
     case 'education_posts':
-      return 16000; // 教育ポスト9本セットは長いため
+      return 24000; // 教育ポスト9本セットなので大幅に増加
     case 'sales_letter':
       return 16000; // セールスレターは長いため
     case 'free_content':
@@ -166,7 +166,7 @@ function isLongContentType(contentType: string): boolean {
 function getExpectedLengthForContentType(contentType: string): number {
   switch (contentType) {
     case 'education_posts':
-      return 8000; // 9本セットなので十分長い
+      return 15000; // 9本セット（各1500-2000文字）なので大幅に増加
     case 'sales_letter':
       return 6000; // セールスレターは長文
     case 'free_content':
@@ -288,7 +288,7 @@ function getSystemPrompt(contentType: string): string {
     case 'short_lp':
       return `${basePrompt} メール登録を促す短尺LPを作成してください。`;
     case 'education_posts':
-      return `${basePrompt} SNS向け教育ポストを作成してください。独立したテーマで読みたくなる余白を残してください。`;
+       return `${basePrompt} **必ず9本の独立した教育ポストを完全に生成してください。** 各ポストは完全な内容で、読者に価値を提供する教育的なコンテンツである必要があります。`;
     case 'campaign_post':
       return `${basePrompt} SNSでの企画ポスト（告知）を作成してください。`;
     case 'long_lp':
@@ -852,6 +852,8 @@ ${inputContext}
 
 以下の無料プレゼントをもとに、**読者の関心を高め、noteへと誘導する予告ポストを**長文で**9本**作成してください。
 
+**重要：必ず9本すべてのポストを完全に生成してください。途中で止まることなく、すべてのポストを出力してください。**
+
 【前提】
 ・投稿媒体：X（旧Twitter）ですが、文字数制限は考慮不要です。
 ・目的：3日間連続投稿による連続ストーリー型の予告ポスト。
@@ -863,7 +865,38 @@ ${inputContext}
 ・**コピー調の短文や箇条書きではなく、ストーリーやエッセイのような文体**で書くこと。
 ・各ポストの構造は「導入→背景→気づき→読者への問いかけ」など、自然な文章構成で展開すること。
 ・できるだけ「書き手の語り」が感じられる文体で書くこと（講座を届けたいという熱量を込めて）。
-・出力は1日分ずつ（3ポストずつ）分割してもよい。
+
+【出力形式】
+各ポストには明確な番号を付けてください：
+
+**DAY1 投稿1/9**
+[ポスト内容]
+
+**DAY1 投稿2/9**
+[ポスト内容]
+
+**DAY1 投稿3/9**
+[ポスト内容]
+
+**DAY2 投稿4/9**
+[ポスト内容]
+
+**DAY2 投稿5/9**
+[ポスト内容]
+
+**DAY2 投稿6/9**
+[ポスト内容]
+
+**DAY3 投稿7/9**
+[ポスト内容]
+
+**DAY3 投稿8/9**
+[ポスト内容]
+
+**DAY3 投稿9/9**
+[ポスト内容]
+
+必ず9本すべてを完了してください。
 
 参照ナレッジ：読まれる長文ポストの奥義
 
