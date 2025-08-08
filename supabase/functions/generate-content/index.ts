@@ -17,7 +17,7 @@ serve(async (req) => {
   }
 
   try {
-    const { projectId, contentType, input, inputType } = await req.json();
+    const { projectId, contentType, input, inputType, systemPrompt, userPrompt } = await req.json();
     
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: req.headers.get('Authorization')! } }
@@ -32,62 +32,105 @@ serve(async (req) => {
     // Use a temporary user ID for now
     const userId = 'temp-user-id';
 
-    // Generate content based on type
-    const prompt = getPromptForContentType(contentType, input, inputType);
-    
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${openAIApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: getSystemPrompt(contentType) },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: 2000,
-        temperature: 0.7,
-        top_p: 0.9,
-        presence_penalty: 0.4,
-        frequency_penalty: 0.3,
-      }),
-    });
+    // Build prompts (prefer provided optimized prompts if present)
+    const system = (typeof systemPrompt === 'string' && systemPrompt.trim().length > 0)
+      ? systemPrompt
+      : getSystemPrompt(contentType);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    const userContent = (typeof userPrompt === 'string' && userPrompt.trim().length > 0)
+      ? userPrompt
+      : getPromptForContentType(contentType, input, inputType);
+
+    // Completion marker to detect the end
+    const END_MARK = '<END_OF_DOCUMENT>';
+
+    // Prepare chat messages
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: system },
+      { role: 'user', content: `${userContent}\n\n必ず文書を最後まで書き切り、完了時は最後に ${END_MARK} とだけ記載してください。` },
+    ];
+
+    let full = '';
+    let finished = false;
+    let iteration = 0;
+    const maxIterations = 6;
+
+    while (!finished && iteration < maxIterations) {
+      iteration++;
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openAIApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages,
+          max_tokens: 4096,
+          temperature: 0.7,
+          top_p: 0.9,
+          presence_penalty: 0.4,
+          frequency_penalty: 0.3,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('OpenAI API error:', response.status, errorText);
+        throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+      }
+
+      const contentType_response = response.headers.get('content-type');
+      if (!contentType_response || !contentType_response.includes('application/json')) {
+        const errorText = await response.text();
+        console.error('OpenAI API returned non-JSON response:', errorText);
+        throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
+      }
+
+      const data = await response.json();
+      if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+        console.error('Unexpected OpenAI API response structure:', data);
+        throw new Error('Unexpected response structure from OpenAI API');
+      }
+
+      const part: string = data.choices[0].message.content || '';
+      const finishReason: string = data.choices[0].finish_reason;
+
+      full += part;
+
+      console.log(
+        `Iteration ${iteration} for ${contentType} - length ${part.length}, finish_reason: ${finishReason}`
+      );
+
+      if (part.includes(END_MARK)) {
+        finished = true;
+        break;
+      }
+
+      if (finishReason !== 'length') {
+        // Treat as complete if model stopped naturally
+        finished = true;
+        break;
+      }
+
+      // Ask to continue from where it left off
+      messages.push({ role: 'assistant', content: part.slice(-4000) });
+      messages.push({
+        role: 'user',
+        content:
+          `続きのみを書いてください。前の文を繰り返さず、構成・番号・見出しを保って完了まで出力。 完了時は最後に ${END_MARK} を必ず付けてください。`,
+      });
     }
 
-    const contentType_response = response.headers.get('content-type');
-    if (!contentType_response || !contentType_response.includes('application/json')) {
-      const errorText = await response.text();
-      console.error('OpenAI API returned non-JSON response:', errorText);
-      throw new Error(`OpenAI API returned non-JSON response: ${errorText.substring(0, 200)}`);
-    }
+    let generatedContent = full.replaceAll(END_MARK, '').trim();
 
-    const data = await response.json();
-    
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      console.error('Unexpected OpenAI API response structure:', data);
-      throw new Error('Unexpected response structure from OpenAI API');
-    }
-
-    const generatedContent = data.choices[0].message.content;
-
-    // レスポンスの完全性をチェック
-    if (data.choices[0].finish_reason === 'length') {
-      console.warn(`Content generation was truncated due to length limit for ${contentType}`);
-    }
-
-    console.log(`Generated ${contentType} for project ${projectId} - Length: ${generatedContent?.length || 0} characters, Finish reason: ${data.choices[0].finish_reason}`);
-
-    // 生成されたコンテンツが空でないことを確認
     if (!generatedContent || generatedContent.trim().length === 0) {
       throw new Error('Generated content is empty');
     }
+
+    console.log(
+      `Generated ${contentType} for project ${projectId} - Total length: ${generatedContent.length} (iterations: ${iteration})`
+    );
 
     return new Response(JSON.stringify({ 
       success: true, 
