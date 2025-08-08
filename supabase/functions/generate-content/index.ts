@@ -53,7 +53,8 @@ serve(async (req) => {
     let full = '';
     let finished = false;
     let iteration = 0;
-    const maxIterations = 6;
+    const maxIterations = 8;
+    let prevLength = 0;
 
     while (!finished && iteration < maxIterations) {
       iteration++;
@@ -102,24 +103,28 @@ serve(async (req) => {
         `Iteration ${iteration} for ${contentType} - length ${part.length}, finish_reason: ${finishReason}`
       );
 
-      if (part.includes(END_MARK)) {
+      // Consider the entire accumulated text as well
+      if (part.includes(END_MARK) || full.includes(END_MARK)) {
         finished = true;
         break;
       }
 
-      if (finishReason !== 'length') {
-        // Treat as complete if model stopped naturally
-        finished = true;
-        break;
-      }
+      // If we didn't get the END marker yet, always request continuation
+      const grew = full.length > prevLength;
+      prevLength = full.length;
 
-      // Ask to continue from where it left off
       messages.push({ role: 'assistant', content: part.slice(-4000) });
       messages.push({
         role: 'user',
         content:
-          `続きのみを書いてください。前の文を繰り返さず、構成・番号・見出しを保って完了まで出力。 完了時は最後に ${END_MARK} を必ず付けてください。`,
+          `未完了です。直前の続きのみを出力してください。前文を繰り返さず、構成・番号・見出しを保って最終行まで書き切ってください。完了時は最後に ${END_MARK} を必ず付けてください。`,
       });
+
+      // Guard against stalled loops
+      if (!grew && finishReason === 'stop') {
+        console.warn('No growth detected and model returned stop. Breaking to avoid infinite loop.');
+        break;
+      }
     }
 
     let generatedContent = full.replaceAll(END_MARK, '').trim();
